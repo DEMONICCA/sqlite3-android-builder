@@ -1,0 +1,62 @@
+name: Build SQLite Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      API: 21
+      ARCHS: armv7a arm64 x86 x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-ndk@v2
+        with:
+          ndk-version: 'r26d'
+
+      - name: Download latest SQLite
+        id: fetch_sqlite
+        run: |
+          version=$(curl -s https://www.sqlite.org/download.html | grep -oP 'sqlite-autoconf-\K[0-9]+' | head -1)
+          echo "version=$version" >> $GITHUB_OUTPUT
+          wget https://www.sqlite.org/2025/sqlite-autoconf-${version}.tar.gz
+          tar xf sqlite-autoconf-${version}.tar.gz
+
+      - name: Build for all architectures
+        run: |
+          ndk=$NDK_HOME
+          for arch in $ARCHS; do
+            case $arch in
+              armv7a) target=armv7a-linux-androideabi;;
+              arm64)  target=aarch64-linux-android;;
+              x86)    target=i686-linux-android;;
+              x86_64) target=x86_64-linux-android;;
+            esac
+            cd sqlite-autoconf-$([[ "$version" ]])/
+            export CC=$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/${target}${API}-clang
+            ./configure --host=${target%*-linux*} --disable-shared --enable-static
+            make -j$(nproc)
+            mkdir -p ../out/$arch
+            cp sqlite3 ../out/$arch/sqlite3
+            make clean
+            cd ..
+          done
+
+      - name: Package builds
+        run: |
+          cd out
+          zip -r ../multi-arch-sqlite3.zip .
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: multi-arch-sqlite3
+          path: multi-arch-sqlite3.zip
+          
