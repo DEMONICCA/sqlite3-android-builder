@@ -22,21 +22,21 @@ jobs:
           unzip -q android-ndk-r26d-linux.zip
           mv android-ndk-r26d $HOME/ndk
 
-- name: Download latest SQLite source
-  working-directory: workspace
-  run: |
-    curl -s https://www.sqlite.org/download.html -o download.html
-    LATEST_URL=$(grep -oE 'https://www.sqlite.org/[0-9]+/sqlite-autoconf-[0-9]+\.tar\.gz' download.html | head -n1)
-    if [ -z "$LATEST_URL" ]; then
-      echo "❌ URL tidak ditemukan, gagal melanjutkan."
-      exit 1
-    fi
-    FILENAME=$(basename "$LATEST_URL")
-    VERSION=$(echo "$FILENAME" | grep -oP '(?<=autoconf-)[0-9]+')
-    echo "[*] Mengunduh: $FILENAME"
-    curl -L "$LATEST_URL" -o "$FILENAME"
-    tar xf "$FILENAME"
-    echo "$VERSION" > sqlite_version.txt
+      - name: Download latest SQLite source
+        working-directory: workspace
+        run: |
+          curl -s https://www.sqlite.org/download.html -o download.html
+          LATEST_URL=$(grep -oE 'https://www.sqlite.org/[0-9]+/sqlite-autoconf-[0-9]+\.tar\.gz' download.html | head -n1)
+          if [ -z "$LATEST_URL" ]; then
+            echo "❌ URL tidak ditemukan, gagal melanjutkan."
+            exit 1
+          fi
+          FILENAME=$(basename "$LATEST_URL")
+          VERSION=$(echo "$FILENAME" | grep -oP '(?<=autoconf-)[0-9]+')
+          echo "[*] Mengunduh: $FILENAME"
+          curl -L "$LATEST_URL" -o "$FILENAME"
+          tar xf "$FILENAME"
+          echo "$VERSION" > sqlite_version.txt
 
       - name: Build libsqlite3.so
         working-directory: workspace
@@ -96,4 +96,3 @@ jobs:
         with:
           name: libsqlite3-${{ matrix.arch }}
           path: out/${{ matrix.arch }}/libsqlite3.so
-          
