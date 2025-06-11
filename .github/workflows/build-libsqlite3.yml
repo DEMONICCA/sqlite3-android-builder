@@ -25,11 +25,13 @@ jobs:
       - name: Download latest SQLite source
         working-directory: workspace
         run: |
-          curl -s https://www.sqlite.org/index.html | grep -oP 'sqlite-autoconf-\d+\.tar\.gz' | head -n1 > latest.txt
-          export SQLITE_TAR=$(cat latest.txt)
-          curl -O https://www.sqlite.org/2025/$SQLITE_TAR
-          tar xf $SQLITE_TAR
-          echo "$SQLITE_TAR" | sed -E 's/[^0-9]+([0-9]+)\.tar\.gz/\1/' > sqlite_version.txt
+          curl -s https://www.sqlite.org/download.html > download.html
+          LATEST_URL=$(grep -oE 'https://www.sqlite.org/[0-9]+/sqlite-autoconf-[0-9]+\.tar\.gz' download.html | head -n1)
+          FILENAME=$(basename $LATEST_URL)
+          VERSION=$(echo $FILENAME | grep -oP '(?<=autoconf-)[0-9]+')
+          curl -L "$LATEST_URL" -o "$FILENAME"
+          tar xf "$FILENAME"
+          echo "$VERSION" > sqlite_version.txt
 
       - name: Build libsqlite3.so
         working-directory: workspace
