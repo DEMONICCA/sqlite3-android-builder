@@ -9,50 +9,56 @@ jobs:
     env:
       API: 21
       ARCHS: armv7a arm64 x86 x86_64
+      NDK_VERSION: r26d
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup NDK
-        uses: android-actions/setup-ndk@v2
-        with:
-          ndk-version: "r26d"
+      - name: Download Android NDK
+        run: |
+          curl -o ndk.zip https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
+          unzip -q ndk.zip
+          echo "NDK_PATH=$PWD/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
 
-      - name: Download SQLite
+      - name: Fetch latest SQLite
         id: sqlite
         run: |
-          VERSION=$(curl -s https://www.sqlite.org/download.html \
-            | grep -oP 'sqlite-autoconf-\K[0-9]+' | head -1)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(curl -s https://www.sqlite.org/download.html | grep -oP 'sqlite-autoconf-\K[0-9]{7}' | head -n1)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           curl -O https://www.sqlite.org/2025/sqlite-autoconf-${VERSION}.tar.gz
           tar xf sqlite-autoconf-${VERSION}.tar.gz
 
-      - name: Build for all arches
+      - name: Build for all architectures
         run: |
           set -e
           for ARCH in $ARCHS; do
             case $ARCH in
               armv7a) TARGET=armv7a-linux-androideabi ;;
-              arm64) TARGET=aarch64-linux-android ;;
-              x86) TARGET=i686-linux-android ;;
+              arm64)  TARGET=aarch64-linux-android ;;
+              x86)    TARGET=i686-linux-android ;;
               x86_64) TARGET=x86_64-linux-android ;;
             esac
 
-            VERSION=${{ steps.sqlite.outputs.version }}
             cd sqlite-autoconf-${VERSION}
-            export CC="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}${API}-clang"
-            ./configure --host="${TARGET%-*}" --disable-shared --enable-static
+            export PATH=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+            export CC=${TARGET}${API}-clang
+
+            ./configure --host="${TARGET%%-*}" --disable-shared --enable-static
             make -j$(nproc)
             mkdir -p ../out/$ARCH
-            cp sqlite3 ../out/$ARCH/sqlite3
+            cp sqlite3 ../out/$ARCH/
             make clean
             cd ..
           done
 
-      - name: Package artifact
-        run: zip -r multi-arch-sqlite3.zip out
+      - name: Package builds
+        run: |
+          cd out
+          zip -r ../sqlite3-multiarch.zip .
+          cd ..
 
-      - uses: actions/upload-artifact@v3
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: multi-arch-sqlite3
-          path: multi-arch-sqlite3.zip
+          name: sqlite3-multiarch
+          path: sqlite3-multiarch.zip
