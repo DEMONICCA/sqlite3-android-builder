@@ -1,4 +1,4 @@
-name: Build SQLite Android
+name: Build SQLite for Android
 
 on:
   workflow_dispatch:
@@ -12,26 +12,31 @@ jobs:
       NDK_VERSION: r26d
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Download Android NDK
         run: |
-          curl -o ndk.zip https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
+          echo "[*] Downloading Android NDK $NDK_VERSION..."
+          curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
           unzip -q ndk.zip
           echo "NDK_PATH=$PWD/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
 
-      - name: Fetch latest SQLite
+      - name: Fetch latest SQLite version
         id: sqlite
         run: |
+          echo "[*] Fetching latest SQLite version..."
           VERSION=$(curl -s https://www.sqlite.org/download.html | grep -oP 'sqlite-autoconf-\K[0-9]{7}' | head -n1)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           curl -O https://www.sqlite.org/2025/sqlite-autoconf-${VERSION}.tar.gz
           tar xf sqlite-autoconf-${VERSION}.tar.gz
 
-      - name: Build for all architectures
+      - name: Build SQLite for All Architectures
         run: |
           set -e
+          mkdir -p out
           for ARCH in $ARCHS; do
+            echo "[*] Building for $ARCH..."
             case $ARCH in
               armv7a) TARGET=armv7a-linux-androideabi ;;
               arm64)  TARGET=aarch64-linux-android ;;
@@ -39,25 +44,34 @@ jobs:
               x86_64) TARGET=x86_64-linux-android ;;
             esac
 
-            cd sqlite-autoconf-${VERSION}
             export PATH=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
             export CC=${TARGET}${API}-clang
 
-            ./configure --host="${TARGET%%-*}" --disable-shared --enable-static
-            make -j$(nproc)
+            cd sqlite-autoconf-${VERSION}
+            ./configure --host="${TARGET%%-*}" --disable-shared --enable-static > /dev/null
+            make -j$(nproc) > /dev/null
+
             mkdir -p ../out/$ARCH
-            cp sqlite3 ../out/$ARCH/
-            make clean
+            if [ -f sqlite3 ]; then
+              cp sqlite3 ../out/$ARCH/
+            elif [ -f .libs/sqlite3 ]; then
+              cp .libs/sqlite3 ../out/$ARCH/sqlite3
+            else
+              echo "❌ Gagal menemukan biner sqlite3 untuk $ARCH"
+              exit 1
+            fi
+
+            make clean > /dev/null
             cd ..
           done
 
-      - name: Package builds
+      - name: Archive Builds
         run: |
           cd out
           zip -r ../sqlite3-multiarch.zip .
           cd ..
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: sqlite3-multiarch
