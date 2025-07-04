@@ -1,0 +1,98 @@
+name: Build SQLite for Android
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 1'  # Setiap Senin (bisa ganti '1' jadi '0' untuk tiap hari)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      API: 21
+      ARCHS: armv7a arm64 x86 x86_64
+      NDK_VERSION: r26d
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y make automake libtool curl unzip
+
+      - name: Download Android NDK
+        run: |
+          echo "[*] Downloading Android NDK $NDK_VERSION..."
+          curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
+          unzip -q ndk.zip
+          echo "NDK_PATH=$PWD/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+
+      - name: Fetch Latest SQLite Version
+        id: sqlite
+        run: |
+          echo "[*] Fetching latest SQLite download URL..."
+          PAGE=$(curl -s https://www.sqlite.org/download.html)
+          LATEST_URL=$(echo "$PAGE" | grep -oE 'https://www.sqlite.org/[0-9]+/sqlite-autoconf-[0-9]+\.tar\.gz' | head -n1)
+
+          if [ -z "$LATEST_URL" ]; then
+            echo "❌ ERROR: Tidak bisa menemukan URL SQLite."
+            exit 1
+          fi
+
+          echo "LATEST_URL=$LATEST_URL" >> $GITHUB_ENV
+          VERSION=$(echo "$LATEST_URL" | grep -oP '[0-9]{7}')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          echo "[*] Found SQLite version: $VERSION"
+          echo "[*] Downloading $LATEST_URL"
+          curl -L -o sqlite-autoconf-${VERSION}.tar.gz "$LATEST_URL"
+          tar xf sqlite-autoconf-${VERSION}.tar.gz
+
+      - name: Build SQLite for All Architectures
+        run: |
+          set -e
+          mkdir -p out
+          for ARCH in $ARCHS; do
+            echo "[*] Building for $ARCH..."
+            case $ARCH in
+              armv7a) TARGET=armv7a-linux-androideabi ;;
+              arm64)  TARGET=aarch64-linux-android ;;
+              x86)    TARGET=i686-linux-android ;;
+              x86_64) TARGET=x86_64-linux-android ;;
+            esac
+
+            export PATH=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+            export CC=${TARGET}${API}-clang
+
+            cd sqlite-autoconf-${VERSION}
+            ./configure --host="${TARGET%%-*}" --disable-shared --enable-static > /dev/null
+            make -j$(nproc) > /dev/null
+
+            mkdir -p ../out/$ARCH
+            if [ -f sqlite3 ]; then
+              cp sqlite3 ../out/$ARCH/
+            elif [ -f .libs/sqlite3 ]; then
+              cp .libs/sqlite3 ../out/$ARCH/sqlite3
+            else
+              echo "❌ Gagal menemukan biner sqlite3 untuk $ARCH"
+              exit 1
+            fi
+
+            make clean > /dev/null
+            cd ..
+          done
+
+      - name: Archive Builds
+        run: |
+          cd out
+          zip -r ../sqlite3-multiarch.zip .
+          cd ..
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite3-multiarch
+          path: sqlite3-multiarch.zip
+          
